@@ -1,0 +1,79 @@
+{
+  "$schema": "https://opencode.ai/config.json",
+  "instructions": ["{env:LCA_HOME}/PROTOCOL.md", ".agent/MEMORY.md"],
+  "provider": {
+    "lca": {
+      "npm": "@ai-sdk/openai-compatible",
+      "name": "lca router (local floor + free frontier)",
+      "options": {
+        "baseURL": "http://127.0.0.1:8787/v1",
+        "apiKey": "lca-no-auth",
+        "timeout": 1800000,
+        "headerTimeout": 300000
+      },
+      "models": {
+        "build": {
+          "name": "build — local, unmetered",
+          "tool_call": true, "reasoning": false, "temperature": true,
+          "limit": { "context": 262144, "output": 16384 },
+          "cost": { "input": 0, "output": 0 }
+        },
+        "plan": {
+          "name": "plan — best free frontier, degrades to local",
+          "tool_call": true, "reasoning": true, "temperature": true,
+          "limit": { "context": 262144, "output": 32768 },
+          "cost": { "input": 0, "output": 0 }
+        },
+        "sweep": {
+          "name": "sweep — frontier architecture, long output",
+          "tool_call": true, "reasoning": true, "temperature": true,
+          "limit": { "context": 262144, "output": 32768 },
+          "cost": { "input": 0, "output": 0 }
+        }
+      }
+    }
+  },
+  "model": "lca/build",
+  "small_model": "lca/build",
+  "autoupdate": false,
+  "agent": {
+    "build": { "model": "lca/build" },
+    "plan": { "model": "lca/plan" },
+    "observer": {
+      "description": "Frontier observer. Use to decide an approach, review a diff, or resolve an architectural fork — never for bulk edits. Sparse by design: it is the scarce resource.",
+      "mode": "subagent",
+      "model": "lca/plan",
+      "tools": { "write": false, "edit": false, "patch": false }
+    },
+    "researcher": {
+      "description": "Answers questions needing current external information via the deep_research pipeline, and writes the report to .agent/research/.",
+      "mode": "subagent",
+      "model": "lca/build",
+      "tools": { "write": false, "edit": false, "patch": false }
+    }
+  },
+  "mcp": {
+    "research": {
+      "type": "local",
+      "command": ["python3", "{env:LCA_HOME}/mcp/research.py"],
+      "enabled": true,
+      "timeout": 900000
+    },
+    "memory": {
+      "type": "local",
+      "command": ["python3", "{env:LCA_HOME}/mcp/memory.py"],
+      "enabled": true,
+      "timeout": 120000
+    },
+    "sweep": {
+      "type": "local",
+      "command": ["python3", "{env:LCA_HOME}/mcp/sweep.py"],
+      "enabled": true,
+      "timeout": 1800000
+    }
+  },
+  "permission": {
+    "read": "allow", "edit": "allow", "glob": "allow", "grep": "allow",
+    "list": "allow", "bash": "allow", "todowrite": "allow", "webfetch": "allow"
+  }
+}

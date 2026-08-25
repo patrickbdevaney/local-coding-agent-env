@@ -1,0 +1,6 @@
+.env
+local/
+logs/
+fetcher/target/
+__pycache__/
+*.pyc
