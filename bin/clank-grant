@@ -1,0 +1,52 @@
+#!/usr/bin/env bash
+# clank-grant -- install passwordless sudo for the login user on an SSH host.
+#
+#   clank-grant <ssh-host> [<ssh-host> ...]
+#   clank-grant --all              every Host in ~/.ssh/config that answers
+#
+# This exists because the decision is the operator's and the mechanics are
+# fiddly: a syntax error in /etc/sudoers.d locks sudo out of the machine
+# entirely, and recovering from that needs physical access or a root shell you
+# no longer have. So the file is validated with `visudo -c` BEFORE it is
+# installed, every time, on the target host.
+#
+# It is not part of clank's runtime. Nothing calls it automatically.
+set -u
+PW="${CLANK_SUDO_PW:-}"          # only needed the first time, before key auth
+
+grant() {
+  local h="$1"
+  printf '%-12s ' "$h"
+  if ! timeout 10 ssh -o ConnectTimeout=6 -o BatchMode=yes "$h" true 2>/dev/null; then
+    if [ -n "$PW" ] && command -v sshpass >/dev/null; then
+      sshpass -p "$PW" ssh-copy-id -o StrictHostKeyChecking=no \
+        -o PreferredAuthentications=password -o PubkeyAuthentication=no "$h" >/dev/null 2>&1
+    fi
+    timeout 10 ssh -o ConnectTimeout=6 -o BatchMode=yes "$h" true 2>/dev/null \
+      || { echo "unreachable (no key auth; set CLANK_SUDO_PW to bootstrap one)"; return 1; }
+  fi
+  ssh -o ConnectTimeout=8 -o BatchMode=yes "$h" "
+    U=\$(whoami)
+    printf '# Installed by clank-grant, at explicit operator request.\n%s ALL=(ALL) NOPASSWD: ALL\n' \"\$U\" > /tmp/clank.sudoers
+    # Validate first. An invalid sudoers file is unrecoverable without root.
+    visudo -cf /tmp/clank.sudoers >/dev/null 2>&1 || { echo 'REFUSED: sudoers syntax check failed'; exit 1; }
+    if sudo -n true 2>/dev/null; then
+      sudo install -m 0440 -o root -g root /tmp/clank.sudoers /etc/sudoers.d/clank
+    else
+      echo '${PW}' | sudo -S install -m 0440 -o root -g root /tmp/clank.sudoers /etc/sudoers.d/clank 2>/dev/null
+    fi
+    rm -f /tmp/clank.sudoers
+    sudo -K 2>/dev/null
+    sudo -n true 2>/dev/null && echo \"granted on \$(hostname)\" || echo \"FAILED on \$(hostname)\"
+  " 2>&1 | tail -1
+}
+
+if [ "${1:-}" = "--all" ]; then
+  # Only Host entries with a real login user; git-protocol hosts (forge servers
+  # on port 2222 as user `git`) have no shell and are not sudo targets.
+  awk '/^[Hh]ost /{for(i=2;i<=NF;i++) if ($i !~ /[*?]/) print $i}' ~/.ssh/config \
+    | grep -vE 'github|forge' | sort -u | while read -r h; do grant "$h"; done
+else
+  [ $# -eq 0 ] && { sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'; exit 0; }
+  for h in "$@"; do grant "$h"; done
+fi

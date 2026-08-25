@@ -91,6 +91,29 @@ git checkout main && git pull
 Delete the branch after merging. A branch that has already landed is clutter;
 keeping it around implies the work is still open.
 
+## When `gh pr create` fails on a rate limit
+
+Measured, first time this skill was exercised: `gh pr create` returned
+`GraphQL: API rate limit already exceeded` at 5000/5000, with half an hour to
+reset. The `gh` porcelain commands go through GraphQL; the REST API has a
+**separate** quota, and it was at 0/5000 at the same moment. So this works when
+the porcelain does not:
+
+```bash
+gh api repos/OWNER/REPO/pulls -X POST \
+  -f base=main -f head=BRANCH -f title=TITLE -f body=BODY
+gh api repos/OWNER/REPO/pulls/N/merge -X PUT
+```
+
+Check which quota you have actually exhausted before waiting:
+
+```bash
+gh api rate_limit --jq '{graphql:.resources.graphql, core:.resources.core}'
+```
+
+Do not sit out a thirty-minute reset for a limit that does not apply to the call
+you need.
+
 ## The traps
 
 - **Never force-push a shared branch.** `git push --force` rewrites history
@@ -106,3 +129,13 @@ keeping it around implies the work is still open.
   what the repo does. A message that reads like it was written by a different
   tool in a different project is a small signal that the rest of the change
   may not have been read either.
+
+- **`git branch -d` fails while you are standing on that branch.** `git checkout
+  main` first. Obvious in hindsight, easy to trip over inside a script.
+- **After a merge, GitHub may already have deleted the remote branch.** A
+  follow-up delete returning 404 is success, not failure — check before treating
+  it as an error.
+- **Privileged operations.** This user's machines are configured for passwordless
+  sudo, so `sudo` works unattended — which means a wrong command runs unattended
+  too. Say what you are about to do before doing anything destructive with it,
+  and never pipe an unreviewed script into a privileged shell.
