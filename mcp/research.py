@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-lca research MCP -- deep research for a token-poor fleet, at zero marginal cost.
+clank research MCP -- deep research for a token-poor fleet, at zero marginal cost.
 
 THE EXPENSIVE THING IS NOT SEARCHING, IT IS READING
 
@@ -40,11 +40,11 @@ the link scorer, distilled locally. Precision substitutes for breadth.
 import json, sys, os, subprocess, urllib.request, urllib.parse, concurrent.futures as cf, re, time
 
 ROOT    = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-GATEWAY = os.environ.get("LCA_GATEWAY", "http://127.0.0.1:8787/v1/chat/completions")
-SEARX   = os.environ.get("LCA_SEARXNG", "http://127.0.0.1:8080/search")
-UA      = {"User-Agent": "lca-research/1.0", "Content-Type": "application/json"}
-FETCH_BIN = os.environ.get("LCA_FETCH_BIN",
-                           os.path.join(ROOT, "fetcher", "target", "release", "lca-fetch"))
+GATEWAY = os.environ.get("CLANK_GATEWAY", "http://127.0.0.1:8787/v1/chat/completions")
+SEARX   = os.environ.get("CLANK_SEARXNG", "http://127.0.0.1:8080/search")
+UA      = {"User-Agent": "clank-research/1.0", "Content-Type": "application/json"}
+FETCH_BIN = os.environ.get("CLANK_FETCH_BIN",
+                           os.path.join(ROOT, "fetcher", "target", "release", "clank-fetch"))
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 from memory import memory_write   # noqa: E402  -- research reports are memory
 from llm import llm as _llm      # noqa: E402
@@ -325,7 +325,7 @@ def handle(req):
     if m == "initialize":
         return {"jsonrpc": "2.0", "id": i, "result": {
             "protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
-            "serverInfo": {"name": "lca-research", "version": "1.0.0"}}}
+            "serverInfo": {"name": "clank-research", "version": "1.0.0"}}}
     if m == "tools/list":
         return {"jsonrpc": "2.0", "id": i, "result": {"tools": TOOLS}}
     if m == "tools/call":

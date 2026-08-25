@@ -1,5 +1,5 @@
 [package]
-name = "lca-fetch"
+name = "clank-fetch"
 version = "0.1.0"
 edition = "2021"
 description = "Concurrent fetch, text extraction, and link harvest for the subst research lane."

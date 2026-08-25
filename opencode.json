@@ -1,79 +1,170 @@
 {
   "$schema": "https://opencode.ai/config.json",
-  "instructions": ["{env:LCA_HOME}/PROTOCOL.md", ".agent/MEMORY.md"],
+  "instructions": [
+    "{env:CLANK_HOME}/PROTOCOL.md",
+    ".agent/MEMORY.md"
+  ],
   "provider": {
-    "lca": {
+    "clank": {
       "npm": "@ai-sdk/openai-compatible",
-      "name": "lca router (local floor + free frontier)",
+      "name": "clank router (local floor + free frontier)",
       "options": {
         "baseURL": "http://127.0.0.1:8787/v1",
-        "apiKey": "lca-no-auth",
+        "apiKey": "clank-no-auth",
         "timeout": 1800000,
         "headerTimeout": 300000
       },
       "models": {
         "build": {
-          "name": "build — local, unmetered",
-          "tool_call": true, "reasoning": false, "temperature": true,
-          "limit": { "context": 262144, "output": 16384 },
-          "cost": { "input": 0, "output": 0 }
+          "name": "build \u2014 local, unmetered",
+          "tool_call": true,
+          "reasoning": false,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 16384
+          },
+          "cost": {
+            "input": 0,
+            "output": 0
+          }
         },
         "plan": {
-          "name": "plan — best free frontier, degrades to local",
-          "tool_call": true, "reasoning": true, "temperature": true,
-          "limit": { "context": 262144, "output": 32768 },
-          "cost": { "input": 0, "output": 0 }
+          "name": "plan \u2014 best free frontier, degrades to local",
+          "tool_call": true,
+          "reasoning": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          },
+          "cost": {
+            "input": 0,
+            "output": 0
+          }
         },
         "sweep": {
-          "name": "sweep — frontier architecture, long output",
-          "tool_call": true, "reasoning": true, "temperature": true,
-          "limit": { "context": 262144, "output": 32768 },
-          "cost": { "input": 0, "output": 0 }
+          "name": "sweep \u2014 frontier architecture, long output",
+          "tool_call": true,
+          "reasoning": true,
+          "temperature": true,
+          "limit": {
+            "context": 262144,
+            "output": 32768
+          },
+          "cost": {
+            "input": 0,
+            "output": 0
+          }
         }
       }
     }
   },
-  "model": "lca/build",
-  "small_model": "lca/build",
+  "model": "clank/build",
+  "small_model": "clank/build",
   "autoupdate": false,
   "agent": {
-    "build": { "model": "lca/build" },
-    "plan": { "model": "lca/plan" },
+    "build": {
+      "model": "clank/build"
+    },
+    "plan": {
+      "model": "clank/plan"
+    },
     "observer": {
-      "description": "Frontier observer. Use to decide an approach, review a diff, or resolve an architectural fork — never for bulk edits. Sparse by design: it is the scarce resource.",
+      "description": "Frontier observer. Use to decide an approach, review a diff, or resolve an architectural fork \u2014 never for bulk edits. Sparse by design: it is the scarce resource.",
       "mode": "subagent",
-      "model": "lca/plan",
-      "tools": { "write": false, "edit": false, "patch": false }
+      "model": "clank/plan",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "patch": false
+      }
     },
     "researcher": {
       "description": "Answers questions needing current external information via the deep_research pipeline, and writes the report to .agent/research/.",
       "mode": "subagent",
-      "model": "lca/build",
-      "tools": { "write": false, "edit": false, "patch": false }
+      "model": "clank/build",
+      "tools": {
+        "write": false,
+        "edit": false,
+        "patch": false
+      }
     }
   },
   "mcp": {
     "research": {
       "type": "local",
-      "command": ["python3", "{env:LCA_HOME}/mcp/research.py"],
+      "command": [
+        "python3",
+        "{env:CLANK_HOME}/mcp/research.py"
+      ],
       "enabled": true,
       "timeout": 900000
     },
     "memory": {
       "type": "local",
-      "command": ["python3", "{env:LCA_HOME}/mcp/memory.py"],
+      "command": [
+        "python3",
+        "{env:CLANK_HOME}/mcp/memory.py"
+      ],
       "enabled": true,
       "timeout": 120000
     },
     "sweep": {
       "type": "local",
-      "command": ["python3", "{env:LCA_HOME}/mcp/sweep.py"],
+      "command": [
+        "python3",
+        "{env:CLANK_HOME}/mcp/sweep.py"
+      ],
       "enabled": true,
       "timeout": 1800000
+    },
+    "local-search": {
+      "type": "local",
+      "command": [
+        "true"
+      ],
+      "enabled": false
     }
   },
   "permission": {
-    "read": "allow", "edit": "allow", "glob": "allow", "grep": "allow",
-    "list": "allow", "bash": "allow", "todowrite": "allow", "webfetch": "allow"
+    "read": "allow",
+    "edit": "allow",
+    "glob": "allow",
+    "grep": "allow",
+    "list": "allow",
+    "bash": "allow",
+    "todowrite": "allow",
+    "webfetch": "allow"
+  },
+  "command": {
+    "loop": {
+      "description": "Work to completion without handing back",
+      "template": "$ARGUMENTS\n\nWork on this autonomously until it is genuinely complete. For this task:\n\n- Do not ask me questions. Where something is ambiguous, make the reasonable\n  choice, note it, and keep going.\n- Verify your own work as you go \u2014 run the tests, run the code, read the output.\n  Local tokens are unmetered; spend them on checking rather than on hoping.\n- If you get stuck, change approach rather than retrying the same thing.\n- Record what you decided with the memory tool as you decide it, not at the end.\n\nWhen everything is done AND verified, say so plainly and summarise what changed.\nIf you genuinely cannot finish, say exactly what is blocking you and what you\ntried \u2014 do not report partial work as complete."
+    },
+    "research": {
+      "description": "Deep research: search, read, synthesise, save a cited report",
+      "template": "Research this thoroughly using the `deep_research` tool:\n\n$ARGUMENTS\n\nCall the tool with a precise, self-contained question \u2014 it does not see our\nconversation, so put the necessary context into the question itself. When it\nreturns, give me the answer in your own words: what the evidence actually shows,\nwhere sources disagree, and what remains unknown. Cite the sources it found.\n\nThe full report with provenance is saved under `.agent/research/` \u2014 tell me the\npath. If anything in the answer changes how we should build what we are\nbuilding, say so, and record it with the memory tool."
+    },
+    "sweep": {
+      "description": "Frontier architecture review of what you just built",
+      "template": "Run a frontier architecture sweep with the `sweep` tool.\n\n$ARGUMENTS\n\nIf I did not name files above, sweep the ones you have just been working on.\n\nState the `goal` as THE PROBLEM, not as your solution \u2014 the whole value of this\ntool is that the frontier model designs independently, without seeing your code,\nand a goal phrased as \"make the cache use an LRU\" leaks the answer and destroys\nthe comparison. Say \"bound memory for a cache with time-varying access\npatterns\". Pass any real constraints (interfaces you cannot change, dependencies\nyou cannot add, performance targets) in `constraints`.\n\nWhen it returns, tell me the verdict and go through the findings. For each one,\nsay whether you agree \u2014 you have read the code and it has not. Then apply what\nis worth applying, and record what you deliberately did not apply, and why, with\nthe memory tool. A finding you rejected for a good reason is worth as much as one\nyou took."
+    },
+    "harness": {
+      "description": "Improve clank itself",
+      "template": "Work on clank, the harness you are running inside. Its source is at:\n\n    {env:CLANK_HOME}\n\n$ARGUMENTS\n\nGo and look. Use the ordinary tools \u2014 `ls`, `grep`, `find`, `cat`, reading files\n\u2014 to traverse that directory and understand what is actually there before\nproposing anything. The parts are: `router/gateway.py` (the model router: route\nladders, the live frontier pool, health, the tool-loop guard, provenance),\n`mcp/` (research, memory and sweep servers), `bin/clank` (this CLI),\n`opencode.json` (wiring), `PROTOCOL.md` (your own standing instructions),\n`DESIGN.md` (why it is shaped this way \u2014 read it before changing the shape), and\n`logs/calls.jsonl` (every model call ever made, with its full attempt ladder).\n\nThat log is evidence. If you want to know whether a route is failing, how often\na rung 429s, or where the time goes, read it rather than speculating.\n\nTwo hard rules. Never commit anything that reads more than one credential per\nprovider \u2014 that policy lives in `local/`, which is gitignored and stays that\nway. And whatever you change, the local model must remain the last rung of every\nladder: the harness has to keep working with every cloud key revoked.\n\nVerify anything you change against the real router before telling me it works."
+    },
+    "remember": {
+      "description": "Record a durable fact about this project",
+      "template": "Record this in project memory with the `memory_write` tool:\n\n$ARGUMENTS\n\nChoose the right kind: `fact` for a durable truth (it goes in MEMORY.md and is\nloaded into every future session, so keep it to one tight line), `decision` for\nan architectural choice \u2014 and include what you rejected and why, because that is\nthe half that saves the next session. Write it so it is useful to someone who\nhas not read this conversation."
+    },
+    "recall": {
+      "description": "Search project memory",
+      "template": "Search project memory with `memory_search` for:\n\n$ARGUMENTS\n\nThen tell me what this project already knows about it \u2014 decisions, research,\nsweeps, journal. If nothing matches, say so plainly rather than guessing from\nthe code."
+    },
+    "map": {
+      "description": "Rebuild and show the repo symbol map",
+      "template": "Call the `repomap` tool to rebuild the symbol map, then give me a short orientation: what the main pieces are and how they fit together."
+    }
   }
 }

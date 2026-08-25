@@ -1,0 +1,188 @@
+#!/usr/bin/env bash
+# clank -- a coding agent that runs on your own hardware.
+#
+#   clank                  open the conversation here
+#   clank "..."            open the conversation with that prompt already typed
+#   clank -p "..."         headless: run it, print the answer, exit
+#   clank -c               continue the last conversation
+#   clank --resume         pick a past conversation and continue it
+#   clank self             open the conversation on clank's own source
+#   clank init             set up .agent/ memory in this project
+#   clank status           what is up, and which model would answer right now
+#   clank doctor           check the install
+#   clank stop | down      stop the router / the router and the model server
+#
+# Inside the conversation:
+#
+#   /loop      work to completion without handback
+#   /research  deep research, saved to .agent/research/
+#   /sweep     frontier architecture review of what you just built
+#   /harness   improve clank itself
+#   /remember  /recall  /map
+#
+# You do not have to reach for those. Ask for a thing in plain language and it
+# routes itself; the commands are there for when you want to be explicit.
+#
+# Permissions are skipped by default. That is deliberate, and it is most of why
+# this feels like a tool rather than a dialogue.
+set -u
+CLANK_HOME="${CLANK_HOME:-$(cd "$(dirname "$(readlink -f "$0")")/.." && pwd)}"
+export CLANK_HOME
+PORT="${CLANK_PORT:-8787}"
+[ -f "$CLANK_HOME/.env" ] && set -a && . "$CLANK_HOME/.env" && set +a
+LOCAL_URL="${CLANK_LOCAL_URL:-http://127.0.0.1:8080/v1}"
+HOST="${CLANK_SSH_HOST:-}"
+START_CMD="${CLANK_START_CMD:-~/qwen-start.sh}"
+STOP_CMD="${CLANK_STOP_CMD:-~/qwen-stop.sh}"
+export OPENCODE_CONFIG="$CLANK_HOME/opencode.json"
+export PATH="${CLANK_NODE_BIN:-$HOME/.nvm/versions/node/v22.18.0/bin}:$PATH"
+OC=(opencode)
+say() { printf '%s\n' "$*" >&2; }
+
+local_up()  { curl -sf --max-time 6 "$LOCAL_URL/models" >/dev/null 2>&1; }
+router_up() { curl -sf --max-time 3 "http://127.0.0.1:$PORT/v1/models" >/dev/null 2>&1; }
+
+up() {
+  if ! local_up && [ -n "$HOST" ]; then
+    say "· model server down — starting it on $HOST"
+    ssh -o ConnectTimeout=8 -o BatchMode=yes "$HOST" "$START_CMD" >/dev/null 2>&1 &
+    for _ in $(seq 1 60); do local_up && break; sleep 3; done
+  fi
+  local_up || say "· local model DOWN — cloud routes still work, the floor does not"
+  if ! router_up; then
+    ( cd "$CLANK_HOME" && mkdir -p logs && setsid nohup python3 router/gateway.py \
+        > logs/router.out 2>&1 < /dev/null & )
+    for _ in $(seq 1 24); do router_up && break; sleep 0.5; done
+  fi
+  router_up || { say "· router FAILED — see $CLANK_HOME/logs/router.out"; exit 1; }
+}
+
+# opencode stores sessions globally. "Resume" almost always means "the one I was
+# just in", so default to this directory's and fall back to everything.
+pick_session() {
+  local js; js=$("${OC[@]}" session list --format json -n 200 2>/dev/null)
+  [ -z "$js" ] && { say "no conversations yet"; return 1; }
+  printf '%s' "$js" | python3 - "$PWD" "${1:-}" <<'PY'
+import json, sys, os, time
+cwd, allf = sys.argv[1], sys.argv[2]
+rows = json.loads(sys.stdin.read() or "[]")
+if not allf:
+    here = [r for r in rows if (r.get("directory") or "").startswith(cwd)]
+    rows = here or rows
+rows = rows[:30]
+if not rows:
+    sys.exit(1)
+print("", file=sys.stderr)
+for i, r in enumerate(rows, 1):
+    ago = (time.time() * 1000 - r.get("updated", 0)) / 3600000.0
+    when = f"{ago:.0f}h ago" if ago < 48 else time.strftime("%b %d", time.localtime(r.get("updated", 0) / 1000))
+    d = os.path.basename(r.get("directory") or "")
+    print(f"\033[2m{i:>3}\033[0m  \033[2m{when:>8}\033[0m  {r.get('title','(untitled)')[:64]:<64} \033[2m{d}\033[0m",
+          file=sys.stderr)
+print("", file=sys.stderr)
+try:
+    sel = input("  resume # (enter = most recent): ").strip() or "1"
+    print(rows[int(sel) - 1]["id"])
+except (EOFError, KeyboardInterrupt, ValueError, IndexError):
+    sys.exit(1)
+PY
+}
+
+PRINT=0; LOOP=0; ALL=""
+ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    -p|--print)    PRINT=1; shift ;;
+    --loop)        LOOP=1; shift ;;
+    -a|--all)      ALL=1; shift ;;
+    --)            shift; ARGS+=("$@"); break ;;
+    *)             ARGS+=("$1"); shift ;;
+  esac
+done
+set -- ${ARGS[@]+"${ARGS[@]}"}
+
+case "${1:-}" in
+  -c|--continue) up; shift; exec "${OC[@]}" --auto --continue ${1+"$@"} ;;
+
+  --resume|-r)
+    up; shift
+    SID=$(pick_session "$ALL") || { say "cancelled"; exit 1; }
+    exec "${OC[@]}" --auto --session "$SID" ;;
+
+  self) up; exec "${OC[@]}" --auto "$CLANK_HOME" ;;
+
+  init)
+    mkdir -p .agent/research .agent/sweeps .agent/decisions
+    [ -f .agent/MEMORY.md ] || printf '# Project memory\n\nDurable facts. One per line. Loaded at the start of every session.\n\n' > .agent/MEMORY.md
+    python3 "$CLANK_HOME/mcp/memory.py" <<< '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"repomap","arguments":{}}}' >/dev/null
+    say "· .agent/ ready — repomap.md built" ;;
+
+  status)
+    local_up  && echo "local model  UP    $LOCAL_URL" || echo "local model  down  $LOCAL_URL"
+    router_up && echo "router       UP    127.0.0.1:$PORT" || { echo "router       down"; exit 0; }
+    curl -sf --max-time 5 "http://127.0.0.1:$PORT/v1/health" | python3 -c "
+import json,sys
+d=json.load(sys.stdin)
+print(f\"pool         {d['pool_source']}  credentials: openrouter={'yes' if d['openrouter_keys'] else 'no'} groq={'yes' if d['groq_keys'] else 'no'}\")
+print('frontier ladder (best first):')
+for f in d['frontier'][:6]:
+    c=f\"  cooling {f['cooling_s']}s\" if f['cooling_s'] else ''
+    print(f\"  {f['rank']:>5}  {f['model']:<48} {f['ctx']:>8}{c}\")"
+    echo; echo "last 8 routes:"
+    tail -8 "$CLANK_HOME/logs/calls.jsonl" 2>/dev/null | python3 -c "
+import json,sys
+for l in sys.stdin:
+    d=json.loads(l)
+    print(f\"  {d['virtual']:<8} -> {str(d['chosen']):<46} {d['total_s']:>7}s  {len(d.get('attempts') or [])} attempt(s)\")" ;;
+
+  doctor)
+    echo "CLANK_HOME   $CLANK_HOME"
+    echo "config       $OPENCODE_CONFIG"
+    command -v opencode >/dev/null && echo "opencode     $("${OC[@]}" --version 2>/dev/null)" || echo "opencode     MISSING"
+    [ -x "$CLANK_HOME/fetcher/target/release/clank-fetch" ] && echo "fetcher      built" \
+      || echo "fetcher      NOT BUILT — cargo build --release --manifest-path $CLANK_HOME/fetcher/Cargo.toml"
+    local_up && echo "local model  reachable" || echo "local model  UNREACHABLE at $LOCAL_URL"
+    router_up && echo "router       reachable" || echo "router       not running (starts on demand)"
+    [ -f "$CLANK_HOME/.env" ] && echo "config file  .env present" || echo "config file  no .env — local-only mode (supported)"
+    curl -sf --max-time 8 "${CLANK_SEARXNG:-http://127.0.0.1:8080/search}?q=test&format=json" >/dev/null 2>&1 \
+      && echo "searxng      reachable" || echo "searxng      unreachable — research falls back to seed roots + link harvest" ;;
+
+  stop)
+    P=$(pgrep -f 'router/gateway\.py' | head -1)
+    [ -n "$P" ] && kill "$P" && echo "router stopped" || echo "router not running" ;;
+
+  down)
+    P=$(pgrep -f 'router/gateway\.py' | head -1); [ -n "$P" ] && kill "$P" && echo "router stopped"
+    [ -n "$HOST" ] && ssh -o ConnectTimeout=8 "$HOST" "$STOP_CMD" && echo "model server stopped" ;;
+
+  -h|--help|help) sed -n '2,29p' "$(readlink -f "$0")" | sed 's/^# \{0,1\}//' ;;
+
+  "") up; exec "${OC[@]}" --auto ;;
+
+  *)
+    up
+    if [ "$PRINT" = 1 ] && [ "$LOOP" = 1 ]; then
+      # Unattended multi-turn form. The in-conversation equivalent is /loop.
+      #
+      # The sentinel matters: a model told to "keep going" keeps going forever.
+      # It gets one exact string to emit when done, and two independent stops
+      # back it up -- an iteration cap, and a repeat detector for the case where
+      # it emits the same text twice and has plainly stopped making progress.
+      PROTO='Work autonomously until this is genuinely complete. Do not ask questions; make the reasonable choice and record it. Verify your own work — run the tests, run the code. When and ONLY when everything is done and verified, end your reply with the exact line: CLANK-TASK-COMPLETE'
+      MAX="${CLANK_LOOP_MAX:-14}"; PREV=""
+      OUT=$("${OC[@]}" run --auto "$* 
+
+$PROTO" 2>&1); printf '%s\n' "$OUT"
+      i=1
+      while [ "$i" -lt "$MAX" ]; do
+        case "$OUT" in *CLANK-TASK-COMPLETE*) say "· complete after $i iteration(s)"; exit 0 ;; esac
+        [ "$OUT" = "$PREV" ] && { say "· output repeated verbatim — no progress, stopping"; exit 1; }
+        PREV="$OUT"; i=$((i+1)); say "· iteration $i"
+        OUT=$("${OC[@]}" run --auto --continue "Continue. $PROTO" 2>&1); printf '%s\n' "$OUT"
+      done
+      say "· hit the $MAX-iteration cap — resume with: clank -c"; exit 1
+    fi
+    [ "$PRINT" = 1 ] && exec "${OC[@]}" run --auto "$@"
+    # Default is the conversation, with your prompt already in it.
+    exec "${OC[@]}" --auto --prompt "$*" ;;
+esac

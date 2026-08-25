@@ -8,15 +8,29 @@ The design and its rationale are in [DESIGN.md](DESIGN.md). This file is how to
 use it.
 
 ```
-lca                      open the agent here
-lca "add retries to X"   do the task, report back
-lca -r                   pick a past session and resume it
-lca loop "..."           work until done, no handback
-lca research "..."       deep research -> cited answer + a markdown report
-lca sweep "goal" f1 f2   frontier architecture sweep -> a markdown report
-lca self                 open the agent on its own source
-lca status | doctor      what is up, and which model would answer right now
+clank                    open the conversation here
+clank "add retries to X" open it with that prompt already typed
+clank --resume           pick a past conversation and continue it
+clank -c                 continue the last one
+clank -p "..."           headless: run it, print the answer, exit
+clank self               open the conversation on clank's own source
+clank status | doctor    what is up, and which model would answer right now
 ```
+
+Inside the conversation:
+
+| | |
+|---|---|
+| `/loop` | work to completion without handing back |
+| `/research` | search, read, synthesise, save a cited report |
+| `/sweep` | frontier architecture review of what you just built |
+| `/harness` | improve clank itself |
+| `/remember` `/recall` `/map` | project memory and the symbol map |
+
+**You do not have to reach for those.** Ask for something in plain language and
+it routes itself — a question about how a library really behaves triggers
+research, a multi-step task runs to completion without stopping to ask. The
+commands are there for when you want to be deliberate.
 
 Permissions are skipped by default. That is deliberate, and it is most of why
 this feels like a tool rather than a dialogue.
@@ -31,13 +45,16 @@ this feels like a tool rather than a dialogue.
                  ▼
         router :8787   OpenAI-compatible.  Ladders, health, loop guard, provenance.
                  │
-    ┌────────────┼─────────────────┬──────────────────┐
-    ▼            ▼                 ▼                  ▼
-  build        plan / sweep      distill            search
-  LOCAL ✱      best free         wide parallel      OFF by default
-  then cloud   frontier          map (many docs     (costs money)
-               then LOCAL ✱      at once)
-                                 then LOCAL ✱
+    ┌────────────┼──────────────────┐
+    ▼            ▼                  ▼
+  build        plan / sweep       distill
+  LOCAL ✱      best free          wide parallel map
+  then cloud   frontier           (many docs at once)
+               then LOCAL ✱       then LOCAL ✱
+
+  Retrieval is not a lane. Search runs against a local SearXNG, pages are
+  fetched by a local Rust binary, and the reading is done by `distill`.
+  There is no paid search path anywhere in this system.
 ```
 
 ✱ **Every ladder terminates at the local model.** Revoke every cloud key and
@@ -50,12 +67,12 @@ every remote route and every run still completed.
 ```bash
 git clone <this repo> && cd local-coding-agent-env
 cargo build --release --manifest-path fetcher/Cargo.toml
-cp .env.example .env && $EDITOR .env          # at minimum: LCA_LOCAL_URL
-ln -s "$PWD/bin/lca" ~/.local/bin/lca
-lca doctor
+cp .env.example .env && $EDITOR .env          # at minimum: CLANK_LOCAL_URL
+ln -s "$PWD/bin/clank" ~/.local/bin/clank
+clank doctor
 ```
 
-`lca` starts the router on demand and, if `LCA_SSH_HOST` is set, will start the
+`clank` starts the router on demand and, if `CLANK_SSH_HOST` is set, will start the
 model server over SSH before doing anything else. There is no daemon to babysit.
 
 Requires [opencode](https://opencode.ai) and Python 3.8+. No other runtime
@@ -108,7 +125,7 @@ until it cools. Hardcoding names is a bug: free endpoints appear and are
 withdrawn constantly, and a withdrawn model 404s and looks transient.
 
 ```
-$ lca status
+$ clank status
 frontier ladder (best first):
    92  stealth/ox-alpha                                  1048576
    88  minimax/minimax-m3:free                           1048576
@@ -169,7 +186,7 @@ embedding server, no index to rebuild. The corpus is small and dense with exact
 identifiers (`chat_template_kwargs`, `LOOP_TRIP`) — which is precisely what
 lexical retrieval is best at and what embeddings blur.
 
-`lca init` sets it up in a project. The agent is instructed
+`clank init` sets it up in a project. The agent is instructed
 ([PROTOCOL.md](PROTOCOL.md)) to search memory before investigating and to write
 facts down as it learns them.
 
@@ -193,11 +210,11 @@ enough to fall down the ladder.
 
 **Silent misconfiguration.** `.env` values are unquoted on load (a quote in a
 bearer token 401s every remote route), and settings are read *after* the `.env`
-is loaded — the reverse order silently ignored `LCA_LOCAL_URL` and pointed the
+is loaded — the reverse order silently ignored `CLANK_LOCAL_URL` and pointed the
 local route at a port occupied by an unrelated service.
 
 Every call is logged to `logs/calls.jsonl` with its full attempt ladder — what
-was tried, what failed, what served, how long, how many tokens. `lca status`
+was tried, what failed, what served, how long, how many tokens. `clank status`
 prints the recent ones.
 
 ## Long sessions
@@ -218,7 +235,8 @@ from this repository; nothing here provides one and everything works without it.
 
 | path | what |
 |---|---|
-| `bin/lca` | the CLI: start, resume, loop, research, sweep, status |
+| `bin/clank` | the CLI: open, resume, status, doctor |
+| `opencode.json` → `command` | the in-conversation commands: `/loop`, `/research`, `/sweep`, `/harness` |
 | `router/gateway.py` | ladders, live frontier pool, health, loop guard, provenance |
 | `mcp/research.py` | plan → seed → link-harvest → distill → synthesise |
 | `mcp/memory.py` | BM25 memory, repo map, markdown attestation |

@@ -93,14 +93,21 @@ Hardcoding model names is a bug, not a configuration choice.
 Non-negotiable, because the whole point is drop-in substitution:
 
 - **Permissions skipped by default.** No approval prompts. It is my machine.
-- **Conversational TUI** with the same rhythm: type, it works, it reports.
-- **`--resume` with a session picker.** Select a past conversation, continue it.
-- **Automatic interleaving.** No flags. I never choose a model.
-- **Deep research on request, no flag.** "Research X and write it up" just runs
-  the fanout.
-- **Two working modes:** do-a-task-and-hand-back, or **loop until done**
-  without handback until complete or re-ordered.
+- **`clank` opens a conversation.** I type into it. It is not a command I have
+  to phrase as an argument before I have started thinking.
+- **`--resume` with a picker.** Select a past conversation, continue it.
+- **Everything lives inside the conversation.** `/loop`, `/research`, `/sweep`,
+  `/harness` are slash commands typed where I am already working — not separate
+  binaries invoked from a shell I had to exit to.
+- **It routes itself.** The commands are for being deliberate. Asking in plain
+  language for something that needs current external facts should trigger
+  research; asking for something plainly multi-step should run to completion
+  without stopping to ask permission to continue.
+- **Automatic interleaving.** I never choose a model.
 - **Long context handled honestly** — compaction, transcripts, resume.
+- **It can work on itself** by ordinary means: traversing its own source with
+  `ls`, `grep` and `cat`, and reading its own call log as evidence. Not only
+  through a special mode.
 
 ## 4. Retrieval must be free and local
 
@@ -151,7 +158,7 @@ scrollback.
 ## 6. It must be able to improve itself
 
 The harness, the router, the research pipeline and this document are all in one
-repo. `lca self` points the agent at that repo with its own memory, research and
+repo. `clank self` points the agent at that repo with its own memory, research and
 sweep tools available. The frontier sweep applies to the harness the same way it
 applies to any other code.
 
@@ -170,10 +177,12 @@ completely without it.
 
 ## 8. Acceptance criteria
 
-1. `lca` in any directory opens a working agent, no flags, no prompts.
-2. `lca -r` lists past sessions and resumes a selected one.
-3. Unplug every cloud key: everything still works.
-4. A research request produces a cited answer **and** a markdown file.
-5. A sweep produces a blind design that was written without seeing the code.
-6. Loop mode runs to completion without handback and stops on its own.
-7. Every call is in the log with its ladder.
+1. `clank` in any directory opens a working conversation, no flags, no prompts.
+2. `clank --resume` lists past conversations and resumes a selected one.
+3. `/loop`, `/research`, `/sweep` and `/harness` work from inside it.
+4. Unplug every cloud key: everything still works.
+5. A research request produces a cited answer **and** a markdown file, with no
+   paid API anywhere in the path.
+6. A sweep produces a blind design that was written without seeing the code.
+7. Loop mode runs to completion without handback and stops on its own.
+8. Every call is in the log with its ladder.

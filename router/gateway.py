@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-lca router -- an OpenAI-compatible gateway in front of a heterogeneous fleet.
+clank router -- an OpenAI-compatible gateway in front of a heterogeneous fleet.
 
 It exists to make one property true: THE AGENT NEVER FAILS FOR LACK OF A CLOUD
 MODEL. The local endpoint is the floor. Everything above it is additive. With
@@ -13,7 +13,11 @@ Virtual models exposed to any OpenAI-compatible client:
     plan     planner/observer  best free frontier -> LOCAL
     sweep    architecture      best free frontier -> LOCAL (long output)
     distill  cheap wide map    groq fanout -> LOCAL        (many docs at once)
-    search   web-plugin lane   OPT-IN, costs money, off by default
+
+Retrieval is NOT a lane here. Search and page-reading happen in the research MCP
+against a local SearXNG and a local fetcher, and the reading is distilled by the
+`distill` lane. There is no paid search path and no provider web plugin: the
+whole retrieval pipeline runs on hardware you own or on free tiers.
 
 WHY THE FRONTIER POOL IS DISCOVERED AND NOT CONFIGURED
 
@@ -48,19 +52,18 @@ def load_env(path):
 
 # .env is loaded BEFORE any setting is read from it. An earlier version read the
 # settings at import time and the .env afterwards, which silently ignored
-# LCA_LOCAL_URL and pointed the local route at the default port -- occupied here
+# CLANK_LOCAL_URL and pointed the local route at the default port -- occupied here
 # by an unrelated service, so every local call failed as a malformed response
 # rather than as a misconfiguration.
 ENV = load_env(os.path.join(ROOT, ".env"))
 ENV.update(os.environ)
 
-PORT        = int(ENV.get("LCA_PORT", "8787"))
-LOCAL_URL   = ENV.get("LCA_LOCAL_URL", "http://127.0.0.1:8080/v1")
-LOCAL_MODEL = ENV.get("LCA_LOCAL_MODEL", "qwen38-27b")
+PORT        = int(ENV.get("CLANK_PORT", "8787"))
+LOCAL_URL   = ENV.get("CLANK_LOCAL_URL", "http://127.0.0.1:8080/v1")
+LOCAL_MODEL = ENV.get("CLANK_LOCAL_MODEL", "qwen38-27b")
 # A dead upstream must fail fast enough to fall down the ladder. At 900s a
 # server that died mid-stream hung the client for fifteen minutes instead.
-TIMEOUT     = int(ENV.get("LCA_TIMEOUT", "300"))
-ENABLE_PAID_SEARCH = ENV.get("LCA_PAID_SEARCH", "0") == "1"
+TIMEOUT     = int(ENV.get("CLANK_TIMEOUT", "300"))
 
 def keys(provider):
     """Credentials for a provider, best first.
@@ -171,7 +174,7 @@ class Pool:
         try:
             r = urllib.request.urlopen(urllib.request.Request(
                 "https://openrouter.ai/api/v1/models",
-                headers={"Authorization": "Bearer " + key, "User-Agent": "lca-router/1.0"}), timeout=30)
+                headers={"Authorization": "Bearer " + key, "User-Agent": "clank-router/1.0"}), timeout=30)
             data = json.load(r).get("data", [])
         except Exception:
             return                # keep the previous pool; never degrade on a fetch blip
@@ -252,23 +255,19 @@ def ladder(virtual):
         # spend the per-minute token budget on prose nobody reads.
         return [("groq", "openai/gpt-oss-20b"), ("groq", "qwen/qwen3.6-27b"),
                 ("groq", "openai/gpt-oss-120b"), L]
-    if virtual == "search":
-        if not ENABLE_PAID_SEARCH:
-            return [L]
-        return [("openrouter", m) for m in fr[:3]] + [L]
     return [L]
 
-VIRTUALS = ["build", "plan", "sweep", "distill", "search"]
+VIRTUALS = ["build", "plan", "sweep", "distill"]
 
 # Bytes to read while proving a rung is alive before committing the client to it.
-PRECOMMIT_BYTES = int(ENV.get("LCA_PRECOMMIT_BYTES", "16384"))
+PRECOMMIT_BYTES = int(ENV.get("CLANK_PRECOMMIT_BYTES", "16384"))
 # Wall-clock reserved for the local floor. Descent through cloud rungs stops
 # once this much of the request budget is gone, because "the ladder always ends
 # at local" is only true if there is still time left to reach it. Without this,
 # three slow cloud rungs can consume the client's entire patience and the
 # guarantee holds only in principle.
-LOCAL_RESERVE = int(ENV.get("LCA_LOCAL_RESERVE", "240"))
-CLOUD_BUDGET  = int(ENV.get("LCA_CLOUD_BUDGET", "420"))
+LOCAL_RESERVE = int(ENV.get("CLANK_LOCAL_RESERVE", "240"))
+CLOUD_BUDGET  = int(ENV.get("CLANK_CLOUD_BUDGET", "420"))
 
 CONTENT_RE = re.compile(
     rb'"(?:content|reasoning_content|reasoning|tool_calls|text)"\s*:\s*(?!(?:""|null|\[\s*\])[,}])')
@@ -351,7 +350,7 @@ class H(http.server.BaseHTTPRequestHandler):
         p = self.path.rstrip("/")
         if p.endswith("/models"):
             self._json(200, {"object": "list", "data": [
-                {"id": m, "object": "model", "owned_by": "lca", "context_length": 262144}
+                {"id": m, "object": "model", "owned_by": "clank", "context_length": 262144}
                 for m in VIRTUALS]})
         elif p.endswith("/health"):
             now = time.time()
@@ -405,11 +404,9 @@ class H(http.server.BaseHTTPRequestHandler):
                 body.pop("plugins", None); body.pop("reasoning_effort", None)
             else:
                 body.pop("chat_template_kwargs", None)
-            if virtual == "search" and prov == "openrouter":
-                body.setdefault("plugins", [{"id": "web", "max_results": 8}])
             # Groq fronts its API with Cloudflare, which rejects urllib's default
             # User-Agent outright with error 1010. Any normal UA passes.
-            hdr = {"Content-Type": "application/json", "User-Agent": "lca-router/1.0"}
+            hdr = {"Content-Type": "application/json", "User-Agent": "clank-router/1.0"}
             if key:
                 hdr["Authorization"] = "Bearer " + key
             if attempts and attempts[-1].get("model") == model:
@@ -516,7 +513,7 @@ class S(socketserver.ThreadingMixIn, http.server.HTTPServer):
 
 if __name__ == "__main__":
     POOL.refresh()
-    print(f"lca router :{PORT}  local={LOCAL_URL}  pool={POOL.source} "
+    print(f"clank router :{PORT}  local={LOCAL_URL}  pool={POOL.source} "
           f"({len(POOL.models)})  or={len(keys('openrouter'))} groq={len(keys('groq'))}", flush=True)
     print("  frontier: " + ", ".join(POOL.available(4)), flush=True)
     S(("127.0.0.1", PORT), H).serve_forever()

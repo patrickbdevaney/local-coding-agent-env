@@ -295,7 +295,7 @@ fn main() {
 
     let mut input = String::new();
     if std::io::stdin().read_to_string(&mut input).is_err() || input.trim().is_empty() {
-        eprintln!("usage: echo '[\"https://...\"]' | lca-fetch [--concurrency N] [--cap CHARS] [--links]");
+        eprintln!("usage: echo '[\"https://...\"]' | clank-fetch [--concurrency N] [--cap CHARS] [--links]");
         std::process::exit(2);
     }
     let urls: Vec<String> = match serde_json::from_str(&input) {

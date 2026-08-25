@@ -19,8 +19,8 @@ before answering, give it more room and ask again.
 """
 import json, os, urllib.request
 
-GATEWAY = os.environ.get("LCA_GATEWAY", "http://127.0.0.1:8787/v1/chat/completions")
-UA = {"User-Agent": "lca/1.0", "Content-Type": "application/json"}
+GATEWAY = os.environ.get("CLANK_GATEWAY", "http://127.0.0.1:8787/v1/chat/completions")
+UA = {"User-Agent": "clank/1.0", "Content-Type": "application/json"}
 
 def _text(msg):
     return (msg.get("content") or msg.get("reasoning_content") or msg.get("reasoning") or "").strip()

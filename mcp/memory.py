@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-lca memory MCP -- durable project memory as markdown a human can read.
+clank memory MCP -- durable project memory as markdown a human can read.
 
 WHY NOT A VECTOR DATABASE
 
@@ -253,7 +253,7 @@ def handle(req):
     if m == "initialize":
         return {"jsonrpc": "2.0", "id": i, "result": {
             "protocolVersion": "2024-11-05", "capabilities": {"tools": {}},
-            "serverInfo": {"name": "lca-memory", "version": "1.0.0"}}}
+            "serverInfo": {"name": "clank-memory", "version": "1.0.0"}}}
     if m == "tools/list":
         return {"jsonrpc": "2.0", "id": i, "result": {"tools": TOOLS}}
     if m == "tools/call":

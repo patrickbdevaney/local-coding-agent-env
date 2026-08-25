@@ -19,8 +19,8 @@ frontier streaming through to `[DONE]`.
 
 ## 2. A real agentic task, start to finish
 
-`lca "Read spec.md and do exactly what it says..."` in an empty git repo, with a
-spec for a clock-injected `TokenBucket`:
+A prompt of *"Read spec.md and do exactly what it says"* in an empty git repo,
+with a spec for a clock-injected `TokenBucket`:
 
 - wrote `ratelimit.py` and `test_ratelimit.py`
 - ran the suite, 5/5 pass
@@ -30,7 +30,7 @@ spec for a clock-injected `TokenBucket`:
 **11 model calls, 76s of model time, ~82K tokens — 9 local, 1 frontier, 1 Groq.**
 At the local tier that is unmetered.
 
-`lca loop` was then given a follow-up (`peek(now)`, jitter-free `reset(now)`,
+Loop mode was then given a follow-up (`peek(now)`, jitter-free `reset(now)`,
 tests for both). It refactored the shared refill logic into a `_refill` helper,
 added six tests, ran the full suite to 11/11, recorded a decision, and emitted
 the completion sentinel. **The loop exited on its own after one iteration.**
@@ -78,7 +78,7 @@ rediscovering it.
 
 | bug | why it mattered | fix |
 |---|---|---|
-| Settings read **before** `.env` was loaded | `LCA_LOCAL_URL` silently ignored; the local route pointed at a port occupied by SearXNG, so failures looked like malformed responses rather than misconfiguration | load `.env` first, then read every setting from it |
+| Settings read **before** `.env` was loaded | `CLANK_LOCAL_URL` silently ignored; the local route pointed at a port occupied by SearXNG, so failures looked like malformed responses rather than misconfiguration | load `.env` first, then read every setting from it |
 | `reasoning` vs `reasoning_content` | OpenRouter spells it `reasoning`. Reading only `content` returned `""` — indistinguishable from a model with nothing to say | `mcp/llm.py` reads all three fields |
 | `max_tokens` bounds reasoning *and* answer | ox-alpha spent all 3000 tokens thinking, returned `finish_reason: length` with empty content, and the sweep's "independent design" section came out **blank** after a 105s frontier call | retry once at 4× budget; and never run the delta against an empty design — fall to local and **label the report as not a capability delta** |
 | Sweep report could be cut off before its verdict | verdict silently reported as "see report" | fall back to the highest-severity finding, and say the report was truncated |
@@ -89,7 +89,53 @@ empty, named the two honest options, and declined to invent a design to critique
 against. That refusal is what surfaced the bug. A more agreeable model would
 have produced a plausible report and the defect would still be there.
 
-## 6. What is not verified
+## 6. The conversation routes itself
+
+Verified after the interface moved inside the conversation (`/loop`, `/research`,
+`/sweep`, `/harness` as slash commands rather than shell subcommands).
+
+**Explicit invocation works.** `/map` rebuilt the symbol map and gave a correct
+orientation of a repo it had not seen this session. `/harness` resolved
+`{env:CLANK_HOME}`, traversed clank's own source with ordinary shell tools, and
+answered a question about the harness by *parsing its own call log* — 71 calls,
+22 cloud, 49 local — rather than speculating about what the router does.
+
+**Implicit routing works, which matters more.** Given only:
+
+> *"Does llama.cpp's server support returning per-token logprobs on a streaming
+> chat completion, and what is the exact request field?"*
+
+— no command, no mention of research — it called `deep_research` on its own.
+The router shows what that cost: **2 frontier planning calls and 15 parallel
+distill calls** (13 Groq, 2 local), a report written to `.agent/research/`, and
+an answer that got the field right and volunteered the trap (`n_probs` belongs to
+llama.cpp's *native* `/completion` endpoint, not the OpenAI-compatible one).
+
+That is the Groq width lane doing the thing the local GPU cannot: fifteen
+documents read at once instead of fifteen sequential decodes.
+
+### A finding from that test
+
+The first auto-routing run answered well but used a **stale globally-configured
+MCP** (`local-search`) instead of the harness's own retrieval. opencode merges
+the user's global config, so an unrelated server was silently shadowing the
+pipeline — and it was the same server implicated in the earlier runaway-refetch
+loop. It is now explicitly disabled in `opencode.json`.
+
+Worth stating plainly: the harness has to be self-contained. Anyone cloning this
+repo has no `local-search`, so a run that depends on one is not reproducible and
+the verification would have been measuring the wrong system.
+
+## 7. Retrieval costs nothing
+
+There is no paid search path in this system and no provider web plugin. Search
+is a local SearXNG instance, page fetching is a local Rust binary, link scoring
+is arithmetic, and the reading is done by the free `distill` tier. The `search`
+virtual model that once wrapped a paid web plugin has been removed from the
+router entirely rather than left switched off, because a lane that exists is a
+lane someone eventually enables.
+
+## 8. What is not verified
 
 - **Long-horizon sessions.** Compaction, resume and fork are opencode features
   and were not exercised past a few turns here. The context window is 262K
