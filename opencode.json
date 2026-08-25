@@ -166,5 +166,10 @@
       "description": "Rebuild and show the repo symbol map",
       "template": "Call the `repomap` tool to rebuild the symbol map, then give me a short orientation: what the main pieces are and how they fit together."
     }
+  },
+  "skills": {
+    "paths": [
+      "{env:CLANK_HOME}/skills"
+    ]
   }
 }

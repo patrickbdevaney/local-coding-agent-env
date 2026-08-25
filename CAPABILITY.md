@@ -135,7 +135,43 @@ virtual model that once wrapped a paid web plugin has been removed from the
 router entirely rather than left switched off, because a lane that exists is a
 lane someone eventually enables.
 
-## 8. What is not verified
+## 8. Reach: what it can actually touch
+
+A single probe run, four things at once, reported back honestly including the
+one that found nothing:
+
+| question | result |
+|---|---|
+| Can it hold a **subdirectory** as its working directory? | Yes. `bash` takes a per-invocation `workdir`; it created `sub/hello.py`, ran it from inside `sub`, and confirmed `pwd` across two separate steps. It is not a persistent shell `cd` — each call carries its own directory — but it holds across steps. |
+| Can it search **outward, anywhere on the filesystem**? | Yes. It ran `find / -xdev` plus targeted passes over `/home /opt /usr/local /etc /var`. Nothing is scoped to the project. (The file I asked for was on the *other* machine, and it correctly reported it does not exist here rather than inventing a path.) |
+| Can it **SSH into other machines** and operate them? | Yes. It reached the Aorus over Tailscale with `BatchMode=yes`, and reported hostname and `22086 MiB / 24576 MiB` of GPU memory in use. Key auth had to be set up first — before that, every attempt failed on `Permission denied (publickey)`. |
+| Can it **run and supervise background agents**? | Yes. It launched a detached heartbeat process, polled the log, reported three timestamped lines, killed it by pid, and confirmed it was stopped with `ps`. That is the whole mechanism another agent needs: detach, log, poll, judge, kill. |
+
+The `agent-fleet` skill turns that last one into supervision proper — one log and
+one directory per agent, git worktrees when the work overlaps, and the judgement
+that matters: **output growing but repeating is a loop, not progress, and it
+will not recover on its own.**
+
+## 9. Routing happens without being named
+
+Skills are markdown files whose descriptions are *situations* rather than
+topics. Verified twice, both times with no command and no mention of the
+capability:
+
+- *"Does llama.cpp's server support returning per-token logprobs on a streaming
+  chat completion, and what is the exact request field?"* → ran `deep_research`
+  on its own: 2 frontier planning calls, 15 parallel distill calls, a saved
+  report, and it volunteered the trap (`n_probs` belongs to the *native*
+  `/completion` endpoint, not the OpenAI-compatible one).
+- *"Is the GPU box busy right now, and what's it running?"* → used
+  `remote-machines`, connected over Tailscale, read `nvidia-smi` and `ps`,
+  identified the inference server holding 21.6 GB, **and recorded a durable fact
+  about the host to project memory without being asked.**
+
+The second is the more interesting one: two skills fired in a single turn from a
+one-line question, and neither was named.
+
+## 10. What is not verified
 
 - **Long-horizon sessions.** Compaction, resume and fork are opencode features
   and were not exercised past a few turns here. The context window is 262K

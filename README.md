@@ -27,10 +27,8 @@ Inside the conversation:
 | `/harness` | improve clank itself |
 | `/remember` `/recall` `/map` | project memory and the symbol map |
 
-**You do not have to reach for those.** Ask for something in plain language and
-it routes itself — a question about how a library really behaves triggers
-research, a multi-step task runs to completion without stopping to ask. The
-commands are there for when you want to be deliberate.
+**You do not have to reach for those.** The commands are for when you want to be
+deliberate. Routing normally happens on its own, through **skills** — see below.
 
 Permissions are skipped by default. That is deliberate, and it is most of why
 this feels like a tool rather than a dialogue.
@@ -166,6 +164,36 @@ caller decides every URL.
 Every run writes a full report with sources and provenance to
 `.agent/research/`.
 
+## Skills: why you never have to name a command
+
+The slash commands are the explicit path. The default path is `skills/`, which
+is what makes this feel like a tool rather than a menu.
+
+Each skill is a markdown file whose **description is a trigger condition**, not a
+label. The model sees those descriptions and reaches for the right one on its
+own:
+
+| skill | fires when |
+|---|---|
+| `deep-research` | you are about to assert something external you have not verified |
+| `architecture-sweep` | the *shape* of the solution is the risk |
+| `project-memory` | before investigating from scratch; whenever a durable fact is learned |
+| `autonomous-completion` | the task is plainly multi-step and nobody asked to be consulted |
+| `remote-machines` | the thing to observe or change lives on another host |
+| `agent-fleet` | work should run in the background, or another agent needs supervising |
+
+The descriptions are deliberately written as *situations*, not topics — "you are
+about to state an external fact you are not certain of" rather than "web
+search". A topic label only fires when the user says the topic; a situation
+fires when the situation occurs, which is the whole point.
+
+Measured: asked only *"is the GPU box busy right now, and what's it running?"* —
+no command, no mention of SSH — it used `remote-machines`, connected over
+Tailscale, read `nvidia-smi` and `ps`, and recorded a durable fact about the host
+without being asked to.
+
+Add your own by dropping a directory with a `SKILL.md` into `skills/`.
+
 ## Memory
 
 Durable memory lives in `.agent/` inside your repo, as markdown you can read and
@@ -244,3 +272,4 @@ from this repository; nothing here provides one and everything works without it.
 | `fetcher/` | Rust: parallel fetch, text extraction, anchor harvest |
 | `opencode.json` | provider, models, agents, MCP wiring, permissions |
 | `PROTOCOL.md` | standing instructions given to the agent every session |
+| `skills/` | situation-triggered capabilities — how routing happens without a command |
