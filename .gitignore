@@ -4,3 +4,4 @@ logs/
 fetcher/target/
 __pycache__/
 *.pyc
+models/

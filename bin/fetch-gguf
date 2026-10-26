@@ -1,0 +1,59 @@
+#!/usr/bin/env bash
+# Download a GGUF model for llama.cpp's llama-server and verify it against the sha256 published by Hugging Face.
+#
+#   bin/fetch-gguf                                   default model (below) into ./models
+#   bin/fetch-gguf <hf-repo> <file.gguf> [dest-dir]  any GGUF on Hugging Face
+#
+# Default: ggml-org/Qwen3.8-27B-GGUF, Qwen3.8-27B-Q4_K_M.gguf (Apache-2.0; ~16 GB; fits a 24 GB GPU with room for
+# KV cache). Gated or private repositories need HF_TOKEN in the environment.
+set -euo pipefail
+
+REPO="${1:-ggml-org/Qwen3.8-27B-GGUF}"
+FILE="${2:-Qwen3.8-27B-Q4_K_M.gguf}"
+DEST="${3:-$PWD/models}"
+API="https://huggingface.co/api/models/$REPO?blobs=true"
+URL="https://huggingface.co/$REPO/resolve/main/$FILE"
+auth=(); [ -n "${HF_TOKEN:-}" ] && auth=(-H "Authorization: Bearer $HF_TOKEN")
+
+meta=$(curl -sfL "${auth[@]}" -A "local-coding-agent-env" "$API") || { echo "fetch-gguf: cannot read $REPO from the Hugging Face API" >&2; exit 1; }
+read -r size sha < <(python3 -c '
+import json, sys
+m = json.loads(sys.stdin.read()); f = sys.argv[1]
+for s in m.get("siblings", []):
+    if s["rfilename"] == f:
+        lfs = s.get("lfs") or {}
+        print(s.get("size") or lfs.get("size") or 0, lfs.get("sha256", "")); break
+else:
+    sys.exit("fetch-gguf: %s not found in the repository" % f)
+' "$FILE" <<<"$meta")
+
+mkdir -p "$DEST"
+free=$(df -B1 --output=avail "$DEST" | tail -1)
+if [ "$size" -gt 0 ] && [ "$free" -lt $((size + 2 * 1024 * 1024 * 1024)) ]; then
+  echo "fetch-gguf: need $((size / 1024**3)) GB plus 2 GB headroom in $DEST, have $((free / 1024**3)) GB" >&2; exit 1
+fi
+
+out="$DEST/$FILE"
+echo "Downloading $REPO/$FILE ($((size / 1024**3)) GB) to $out"
+curl -fL --retry 5 -C - "${auth[@]}" -o "$out.part" "$URL"
+if [ -n "$sha" ]; then
+  echo "Verifying sha256..."
+  echo "$sha  $out.part" | sha256sum -c --quiet || { echo "fetch-gguf: sha256 mismatch; partial file kept as $out.part" >&2; exit 1; }
+else
+  echo "fetch-gguf: no published sha256 for this file; skipping verification" >&2
+fi
+mv "$out.part" "$out"
+
+cat <<EOF
+
+Done: $out
+Serve it with llama.cpp (https://github.com/ggml-org/llama.cpp), then point CLANK_LOCAL_URL at it:
+
+  llama-server -m "$out" --host 127.0.0.1 --port 8080 -c 262144 -ngl 99 --jinja
+
+  # .env
+  CLANK_LOCAL_URL=http://127.0.0.1:8080/v1
+  CLANK_LOCAL_MODEL=$(basename "$FILE" .gguf)
+
+Lower -c if the context does not fit your GPU memory.
+EOF

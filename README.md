@@ -68,6 +68,16 @@ every remote route and every run still completed.
 
 ## Install
 
+If you do not yet have a local model server, download a GGUF and serve it with llama.cpp:
+
+```bash
+bin/fetch-gguf            # default: ggml-org/Qwen3.8-27B-GGUF, Q4_K_M (~16 GB, Apache-2.0), sha256-verified
+                          # or: bin/fetch-gguf <hf-repo> <file.gguf> [dest-dir]
+# then run the llama-server command it prints
+```
+
+Then install the agent:
+
 ```bash
 git clone <this repo> && cd local-coding-agent-env
 cargo build --release --manifest-path fetcher/Cargo.toml
@@ -285,6 +295,7 @@ from this repository; nothing here provides one and everything works without it.
 | path | what |
 |---|---|
 | `bin/clank` | the CLI: open, resume, status, doctor |
+| `bin/fetch-gguf` | download and sha256-verify a GGUF from Hugging Face; prints the llama-server command |
 | `opencode.json` → `command` | the in-conversation commands: `/loop`, `/research`, `/sweep`, `/harness` |
 | `router/gateway.py` | ladders, live frontier pool, health, loop guard, provenance |
 | `mcp/research.py` | plan → seed → link-harvest → distill → synthesise |
