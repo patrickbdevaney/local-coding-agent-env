@@ -1,11 +1,17 @@
 # local-coding-agent-env
 
-A coding agent that substitutes for Claude Code, driven by a **local model by
-default** and cloud models **only where they buy something**, at $0 marginal
-cost.
+A terminal coding agent for a single-GPU workstation: [opencode](https://opencode.ai) driven by a local model through
+an OpenAI-compatible router that escalates to hosted models only on evidence of failure, with local research,
+project memory and a loop guard. Every route falls back to the local model, so it runs at zero marginal cost with no
+cloud keys at all.
 
-The design and its rationale are in [DESIGN.md](DESIGN.md). This file is how to
-use it.
+> [!WARNING]
+> **Permission prompts are disabled by default**: the agent edits files and runs shell commands without asking. Run
+> it only on code and machines you trust, or inside a container or virtual machine.
+
+Status: a personal workstation tool, piloted on one RTX 3090 with a 27B-parameter model at 262K context. It brings no
+model server of its own: point it at any local OpenAI-compatible endpoint (llama.cpp `llama-server`, vLLM). The
+design and its rationale are in [DESIGN.md](DESIGN.md); this file is how to use it.
 
 ```
 clank                    open the conversation here
@@ -73,15 +79,17 @@ clank doctor
 `clank` starts the router on demand and, if `CLANK_SSH_HOST` is set, will start the
 model server over SSH before doing anything else. There is no daemon to babysit.
 
-Requires [opencode](https://opencode.ai) and Python 3.8+. No other runtime
-dependency: the router, both MCP servers and the memory index are pure standard
-library.
+Requires [opencode](https://opencode.ai), Python 3.8+, a Rust toolchain for the fetcher, and a running local
+OpenAI-compatible model server (llama.cpp `llama-server` or vLLM; set `CLANK_LOCAL_URL` and `CLANK_LOCAL_MODEL`). The
+router, the MCP servers and the memory index are pure standard library. Optional: an OpenRouter key (frontier
+lane), a Groq key (parallel distill lane), a local SearXNG instance.
 
 ## The three lanes, and what each is for
 
 ### local — the floor and the workhorse
 
-Qwen3.8-27B on one RTX 3090 at 262K context, ~111–142 tok/s. It does
+Piloted with Qwen3.8-27B (W4A16) on one RTX 3090 at 262K context, ~111–142 tok/s (any capable local
+model works; the measurements below are from that configuration). It does
 essentially all the work: reading, editing, running tests, iterating. It is
 unmetered, so it is the right place to spend tokens on *verification* — running
 the code, running the tests, checking its own output.
@@ -121,6 +129,8 @@ a capability table (with a context-window heuristic for models it has never
 seen), and annotated with live health so a model that just 429'd is skipped
 until it cools. Hardcoding names is a bug: free endpoints appear and are
 withdrawn constantly, and a withdrawn model 404s and looks transient.
+
+Example output (illustrative; the pool changes as providers add and withdraw free models):
 
 ```
 $ clank status
@@ -258,6 +268,17 @@ The committed code reads **one key per provider**: `OPENROUTER_API_KEY` and
 `GROQ_API_KEY`. Both are optional; with neither, everything runs on the local
 model. There is a single seam, `local/keyring.py`, which is gitignored and absent
 from this repository; nothing here provides one and everything works without it.
+
+## Security and data
+
+- **Execution.** Permissions are skipped by default (see the warning above). The agent runs commands with your user's
+  privileges; use a container or virtual machine for untrusted repositories.
+- **Network.** The router listens on `127.0.0.1:8787`. Prompts and code context go to the local model; they reach
+  OpenRouter or Groq only when the corresponding key is set and a route escalates or fans out.
+- **Fetched content.** Pages retrieved by research are untrusted input and can contain instructions aimed at the
+  model; no filtering is applied, so review research-driven actions. Each report attributes claims to its sources.
+- **Telemetry.** None. Calls are logged locally to `logs/calls.jsonl`; memory and reports live in your repository
+  under `.agent/`.
 
 ## Files
 
